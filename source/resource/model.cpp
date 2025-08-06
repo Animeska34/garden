@@ -12,14 +12,15 @@
 #include <assimp/Importer.hpp>
 #include <assimp/postprocess.h>
 #include <assimp/scene.h>
-#include <assimp/vector3.h>
+
 
 using namespace ecsm;
 using namespace garden;
 using namespace garden::graphics;
 
+//#define loadScene
 
-const aiScene *Model::loadScene(std::filesystem::path &path)
+const aiScene* loadScene(std::filesystem::path &path)
 {
     Assimp::Importer importer;
     const aiScene *scene = importer.ReadFile(path.string(), aiProcess_Triangulate | aiProcess_JoinIdenticalVertices | aiProcess_SortByPType);
@@ -31,10 +32,10 @@ const aiScene *Model::loadScene(std::filesystem::path &path)
     return scene;
 }
 
-Mesh Model::loadMesh(std::filesystem::path &path)
+Mesh loadMesh(std::filesystem::path &path)
 {
 
-    const aiScene *scene = Model::loadScene(path);
+    const aiScene *scene = loadScene(path);
 
     unsigned int vCount = 0;
     unsigned int iCount = 0;
@@ -137,7 +138,7 @@ Mesh* Model::lod(int&level)
 
 void Model::addLod(std::filesystem::path &path)
 {
-    Mesh mesh = Model::loadMesh(path);
+    Mesh mesh = loadMesh(path);
     this->lods.push_back(mesh);
 }
 
@@ -145,12 +146,20 @@ void Model::addLods(std::filesystem::path *path, int size)
 {
     for (int i = 0; i < size; ++i)
     {
-        Mesh mesh = Model::loadMesh(path[i]);
+        Mesh mesh = loadMesh(path[i]);
         this->lods.push_back(mesh);
     }
 }
 
-void Model::destroy()
+void Mesh::destroy()
 {
     
+}
+
+void Model::destroy()
+{
+    for(int i = 0; i < lods.size(); ++i)
+    {
+        lods[i].destroy();
+    }
 }
