@@ -14,7 +14,7 @@
 #include <assimp/scene.h>
 
 
-using namespace ecsm;
+//using namespace ecsm;
 using namespace garden;
 using namespace garden::graphics;
 
@@ -153,7 +153,7 @@ void Model::addLods(std::filesystem::path *path, int size)
 
 void Mesh::destroy()
 {
-    
+
 }
 
 void Model::destroy()

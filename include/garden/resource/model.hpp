@@ -6,7 +6,7 @@
 
 #define WIN32_LEAN_AND_MEAN
 
-using namespace ecsm;
+//using namespace ecsm;
 using namespace garden::graphics;
 
 namespace garden
@@ -22,8 +22,8 @@ namespace garden
 	struct Mesh
 	{
 		public:
-		ID<Buffer> vertices;
-		ID<Buffer> indices;
+		ecsm::ID<Buffer> vertices;
+		ecsm::ID<Buffer> indices;
 
 		void destroy();
 	};
