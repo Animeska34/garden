@@ -29,6 +29,8 @@
 #include "garden/file.hpp"
 #include "math/tone-mapping.hpp"
 
+#include "garden/resource/model.hpp"
+
 #include "math/types.hpp"
 #include "webp/decode.h"
 #include "png.h"
@@ -2615,4 +2617,14 @@ void ResourceSystem::storeAnimation(const fs::path& path, ID<Animation> animatio
 	serializer.endChild();
 
 	GARDEN_LOG_TRACE("Stored animation. (path: " + path.generic_string() + ")");
+}
+
+Ref<Model> ResourceSystem::getModel(fs::path &path)
+{
+	auto id = models.create();
+
+	auto view = models.get(id);
+	view->addLod(path);
+	
+	return Ref<Model>(id);
 }

@@ -223,9 +223,14 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 	list(APPEND GARDEN_LINK_LIBS "-framework CoreServices")
 endif()
 
+if(NOT GARDEN_PACK_RESOURCES)
+	list(APPEND GARDEN_LINK_LIBS assimp::assimp)
+endif()
+
 include(FetchContent)
 find_package(Vulkan REQUIRED)
-
+find_package(assimp REQUIRED)
+   
 if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
 	set(VOLK_STATIC_DEFINES VK_USE_PLATFORM_MACOS_MVK)
 elseif(CMAKE_SYSTEM_NAME STREQUAL "Linux")

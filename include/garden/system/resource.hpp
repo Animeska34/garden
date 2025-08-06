@@ -25,6 +25,8 @@
 #include "garden/graphics/pipeline/ray-tracing.hpp"
 #include <queue>
 
+#include "garden/resource/model.hpp"
+
 #if GARDEN_PACK_RESOURCES
 #include "pack/reader.hpp"
 #endif
@@ -439,6 +441,12 @@ public:
 	 */
 	pack::Reader& getPackReader() noexcept { return packReader; }
 	#endif
+
+private:
+	LinearPool<Model> models;
+
+public:
+	Ref<Model> getModel(fs::path &path);
 };
 
 } // namespace garden
