@@ -1,9 +1,5 @@
 #pragma once
 
-#include <assimp/Importer.hpp>
-#include <assimp/postprocess.h>
-#include <assimp/scene.h>
-#include <assimp/vector3.h>
 
 #include "garden/resource/model.hpp"
 
@@ -11,6 +7,12 @@
 #include <vector>
 #include "garden/graphics/buffer.hpp"
 #include "garden/system/graphics.hpp"
+
+#define WIN32_LEAN_AND_MEAN
+#include <assimp/Importer.hpp>
+#include <assimp/postprocess.h>
+#include <assimp/scene.h>
+#include <assimp/vector3.h>
 
 using namespace ecsm;
 using namespace garden;

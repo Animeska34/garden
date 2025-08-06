@@ -1,10 +1,13 @@
 #pragma once
 
-#include <assimp/scene.h>
+
 
 #include <vector>
 #include <filesystem>
 #include "garden/graphics/buffer.hpp"
+
+#define WIN32_LEAN_AND_MEAN
+#include <assimp/scene.h>
 
 using namespace ecsm;
 using namespace garden::graphics;
