@@ -139,22 +139,33 @@ public:
 	void setRenderScale(float renderScale);
 
 	/**
+	 * @brief Sets global illumination buffer world space position.
+	 * @details See the @ref getCameraConstants().
+	 * @param giBufferPos target GI buffer position
+	 */
+	void setGiBufferPos(float3 giBufferPos, float intensity = 1.0f) noexcept
+	{
+		currentCameraConstants.giBufferPos = (f32x4)float4(giBufferPos, 0.0f);
+	}
+	/**
 	 * @brief Sets shadow color and intensity
 	 * @details See the @ref getCameraConstants().
-	 * @param shadowColor target shadow color and intensity
+	 *
+	 * @param shadowColor target shadow color value
+	 * @param intensity shadow intensity value
 	 */
 	void setShadowColor(float3 shadowColor, float intensity = 1.0f) noexcept
 	{
 		currentCameraConstants.shadowColor = (f32x4)float4(shadowColor, intensity);
 	}
 	/**
-	 * @brief Sets sky color and intensity. (Pre multiplied with 1/Pi)
+	 * @brief Sets sky color and intensity. (Pre multiplied with 1/Pi!)
 	 * @details See the @ref getCameraConstants().
-	 * @param skyColor target the color and intensity
+	 * @param skyColor target sky color value
 	 */
-	void setSkyColor(float3 skyColor, float intensity = 1.0f) noexcept
+	void setSkyColor(float3 skyColor) noexcept
 	{
-		currentCameraConstants.skyColor = (f32x4)float4(skyColor, intensity);
+		currentCameraConstants.skyColor = (f32x4)float4(skyColor, 0.0f);
 	}
 	/**
 	 * @brief Sets emissive coefficient. (Produces maximum brightness)
@@ -458,7 +469,7 @@ public:
 	 * @throw GardenError if failed to allocate image.
 	 */
 	ID<Image> createImage(
-		Image::Type type, Image::Format format, Image::Usage usage, const Image::Mips& data, u32x4 size,
+		Image::Type type, Image::Format format, Image::Usage usage, const Image::Mips& data, uint3 size,
 		Image::Strategy strategy = Image::Strategy::Default, Image::Format dataFormat = Image::Format::Undefined);
 	/**
 	 * @brief Creates a new 3D image (texture) instance.
@@ -473,7 +484,7 @@ public:
 	 * @throw GardenError if failed to allocate image.
 	 */
 	ID<Image> createImage(
-		Image::Format format, Image::Usage usage, const Image::Mips& data, u32x4 size,
+		Image::Format format, Image::Usage usage, const Image::Mips& data, uint3 size,
 		Image::Strategy strategy = Image::Strategy::Default, Image::Format dataFormat = Image::Format::Undefined)
 	{
 		return createImage(Image::Type::Texture3D, format, usage, data, size, strategy, dataFormat);
@@ -497,7 +508,7 @@ public:
 	{
 		GARDEN_ASSERT(!data.empty());
 		auto imageType = data[0].size() > 1 ? Image::Type::Texture2DArray : Image::Type::Texture2D;
-		return createImage(imageType, format, usage, data, u32x4(size.x, size.y, 1), strategy, dataFormat);
+		return createImage(imageType, format, usage, data, uint3(size.x, size.y, 1), strategy, dataFormat);
 	}
 	/**
 	 * @brief Creates a new 1D image (texture) instance.
@@ -513,12 +524,12 @@ public:
 	 * @throw GardenError if failed to allocate image.
 	 */
 	ID<Image> createImage(
-		Image::Format format, Image::Usage usage, const Image::Mips& data, int32 size,
+		Image::Format format, Image::Usage usage, const Image::Mips& data, uint32 size,
 		Image::Strategy strategy = Image::Strategy::Default, Image::Format dataFormat = Image::Format::Undefined)
 	{
 		GARDEN_ASSERT(!data.empty());
 		auto imageType = data[0].size() > 1 ? Image::Type::Texture1DArray : Image::Type::Texture1D;
-		return createImage(imageType, format, usage, data, u32x4(size, 1, 1), strategy, dataFormat);
+		return createImage(imageType, format, usage, data, uint3(size, 1, 1), strategy, dataFormat);
 	}
 	/**
 	 * @brief Creates a new cubemap image (texture) instance.
@@ -537,7 +548,7 @@ public:
 		Image::Strategy strategy = Image::Strategy::Default, Image::Format dataFormat = Image::Format::Undefined)
 	{
 		GARDEN_ASSERT(!data.empty());
-		return createImage(Image::Type::Cubemap, format, usage, data, u32x4(size.x, size.y, 1), strategy, dataFormat);
+		return createImage(Image::Type::Cubemap, format, usage, data, uint3(size.x, size.y, 1), strategy, dataFormat);
 	}
 
 	/* 

@@ -49,7 +49,7 @@ static ID<Image> createNoiseImage()
 static ID<GraphicsPipeline> createPipeline(uint32 stepCount)
 {
 	auto pbrLightingSystem = PbrLightingSystem::Instance::get();
-	GARDEN_ASSERT(pbrLightingSystem->useAoBuffer());
+	GARDEN_ASSERT(pbrLightingSystem->getOptions().useAoBuffer);
 
 	Pipeline::SpecConstValues specConsts = { { "STEP_COUNT", Pipeline::SpecConstValue(stepCount) } };
 	ResourceSystem::GraphicsOptions options;
@@ -62,11 +62,13 @@ static DescriptorSet::Uniforms getUniforms(ID<Image> noiseImage)
 {
 	auto hizSystem = HizRenderSystem::Instance::get();
 	auto graphicsSystem = GraphicsSystem::Instance::get();
+	auto hizBufferView = hizSystem->getImageViews()[1];
+	auto noiseView = graphicsSystem->get(noiseImage)->getDefaultView();
 
 	DescriptorSet::Uniforms uniforms =
 	{ 
-		{ "hizBuffer", DescriptorSet::Uniform(hizSystem->getImageViews()[1]) },
-		{ "noise", DescriptorSet::Uniform(graphicsSystem->get(noiseImage)->getDefaultView()) },
+		{ "hizBuffer", DescriptorSet::Uniform(hizBufferView) },
+		{ "noise", DescriptorSet::Uniform(noiseView) },
 	};
 	return uniforms;
 }
@@ -99,7 +101,7 @@ void HbaoRenderSystem::init()
 		settingsSystem->getBool("hbao.isEnabled", isEnabled);
 
 	auto pbrLightingSystem = PbrLightingSystem::Instance::get();
-	if (isEnabled && pbrLightingSystem->useAoBuffer())
+	if (isEnabled && pbrLightingSystem->getOptions().useAoBuffer)
 	{
 		if (!noiseImage)
 			noiseImage = createNoiseImage();
@@ -221,11 +223,8 @@ void HbaoRenderSystem::gBufferRecreate()
 {
 	if (descriptorSet)
 	{
-		auto graphicsSystem = GraphicsSystem::Instance::get();
-		graphicsSystem->destroy(descriptorSet);
-		auto uniforms = getUniforms(noiseImage);
-		descriptorSet = graphicsSystem->createDescriptorSet(pipeline, std::move(uniforms));
-		SET_RESOURCE_DEBUG_NAME(descriptorSet, "descriptorSet.hbao");
+		GraphicsSystem::Instance::get()->destroy(descriptorSet);
+		descriptorSet = {};
 	}
 }
 

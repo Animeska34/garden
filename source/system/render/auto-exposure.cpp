@@ -36,11 +36,14 @@ static ID<Buffer> createHistogramBuffer()
 //**********************************************************************************************************************
 static DescriptorSet::Uniforms getHistogramUniforms(ID<Buffer> histogramBuffer)
 {
+	auto graphicsSystem = GraphicsSystem::Instance::get();
 	auto deferredSystem = DeferredRenderSystem::Instance::get();
-	auto hdrFramebufferView = GraphicsSystem::Instance::get()->get(deferredSystem->getHdrFramebuffer());
+	auto hdrFramebufferView = graphicsSystem->get(deferredSystem->getHdrFramebuffer());
+	auto hdrBufferView = hdrFramebufferView->getColorAttachments()[0].imageView;
+
 	DescriptorSet::Uniforms uniforms =
 	{ 
-		{ "hdrBuffer", DescriptorSet::Uniform(hdrFramebufferView->getColorAttachments()[0].imageView) },
+		{ "hdrBuffer", DescriptorSet::Uniform(hdrBufferView) },
 		{ "histogram", DescriptorSet::Uniform(histogramBuffer) }
 	};
 	return uniforms;
@@ -137,8 +140,10 @@ void AutoExposureSystem::render()
 		auto uniforms = getHistogramUniforms(histogramBuffer);
 		histogramDS = graphicsSystem->createDescriptorSet(histogramPipeline, std::move(uniforms));
 		SET_RESOURCE_DEBUG_NAME(histogramDS, "descriptorSet.autoExposure.histogram");
-		
-		uniforms = getAverageUniforms(histogramBuffer);
+	}
+	if (!averageDS)
+	{
+		auto uniforms = getAverageUniforms(histogramBuffer);
 		averageDS = graphicsSystem->createDescriptorSet(averagePipeline, std::move(uniforms));
 		SET_RESOURCE_DEBUG_NAME(averageDS, "descriptorSet.autoExposure.average");
 	}
@@ -183,11 +188,8 @@ void AutoExposureSystem::gBufferRecreate()
 {
 	if (histogramDS)
 	{
-		auto graphicsSystem = GraphicsSystem::Instance::get();
-		graphicsSystem->destroy(histogramDS);
-		auto uniforms = getHistogramUniforms(histogramBuffer);
-		histogramDS = graphicsSystem->createDescriptorSet(histogramPipeline, std::move(uniforms));
-		SET_RESOURCE_DEBUG_NAME(histogramDS, "descriptorSet.autoExposure.histogram");
+		GraphicsSystem::Instance::get()->destroy(histogramDS);
+		histogramDS = {};
 	}
 }
 

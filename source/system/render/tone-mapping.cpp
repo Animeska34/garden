@@ -43,6 +43,7 @@ static DescriptorSet::Uniforms getUniforms(ID<Buffer> luminanceBuffer, bool useB
 	auto deferredSystem = DeferredRenderSystem::Instance::get();
 	auto bloomSystem = BloomRenderSystem::Instance::tryGet();
 	auto hdrFramebufferView = graphicsSystem->get(deferredSystem->getHdrFramebuffer());
+	auto hdrBufferView = hdrFramebufferView->getColorAttachments()[0].imageView;
 
 	ID<ImageView> bloomBufferView;
 	if (bloomSystem && useBloomBuffer)
@@ -57,7 +58,7 @@ static DescriptorSet::Uniforms getUniforms(ID<Buffer> luminanceBuffer, bool useB
 
 	DescriptorSet::Uniforms uniforms =
 	{ 
-		{ "hdrBuffer", DescriptorSet::Uniform(hdrFramebufferView->getColorAttachments()[0].imageView) },
+		{ "hdrBuffer", DescriptorSet::Uniform(hdrBufferView) },
 		{ "bloomBuffer", DescriptorSet::Uniform(bloomBufferView) },
 		{ "luminance", DescriptorSet::Uniform(luminanceBuffer) }
 	};
@@ -174,11 +175,8 @@ void ToneMappingSystem::gBufferRecreate()
 {
 	if (descriptorSet)
 	{
-		auto graphicsSystem = GraphicsSystem::Instance::get();
-		graphicsSystem->destroy(descriptorSet);
-		auto uniforms = getUniforms(luminanceBuffer, useBloomBuffer);
-		descriptorSet = graphicsSystem->createDescriptorSet(pipeline, std::move(uniforms));
-		SET_RESOURCE_DEBUG_NAME(descriptorSet, "descriptorSet.deferred.toneMapping");
+		GraphicsSystem::Instance::get()->destroy(descriptorSet);
+		descriptorSet = {};
 	}
 }
 

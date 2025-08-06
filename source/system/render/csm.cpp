@@ -121,7 +121,7 @@ static void createTransparentFramebuffers(const vector<ID<ImageView>>& transImag
 static ID<GraphicsPipeline> createPipeline()
 {
 	auto pbrLightingSystem = PbrLightingSystem::Instance::get();
-	GARDEN_ASSERT(pbrLightingSystem->useShadowBuffer());
+	GARDEN_ASSERT(pbrLightingSystem->getOptions().useShadowBuffer);
 
 	ResourceSystem::GraphicsOptions options;
 	return ResourceSystem::Instance::get()->loadGraphicsPipeline("csm", pbrLightingSystem->getShadowBaseFB(), options);
@@ -131,16 +131,18 @@ static DescriptorSet::Uniforms getUniforms(ID<Image> depthMap,
 	ID<Image> transparentMap, const DescriptorSet::Buffers& dataBuffers)
 {
 	auto graphicsSystem = GraphicsSystem::Instance::get();
+	auto deferredSystem = DeferredRenderSystem::Instance::get();
 	auto depthMapView = graphicsSystem->get(depthMap)->getDefaultView();
 	auto transparentMapView = graphicsSystem->get(transparentMap)->getDefaultView();
-	auto gFramebuffer = graphicsSystem->get(DeferredRenderSystem::Instance::get()->getGFramebuffer());
+	auto gFramebuffer = graphicsSystem->get(deferredSystem->getGFramebuffer());
+	auto gNormalsView = gFramebuffer->getColorAttachments()[DeferredRenderSystem::gBufferNormals].imageView;
+	auto depthBufferView = deferredSystem->getDepthImageView();
 	auto inFlightCount = graphicsSystem->getInFlightCount();
 	
 	DescriptorSet::Uniforms uniforms =
 	{ 
-		{ "gNormals", DescriptorSet::Uniform(gFramebuffer->getColorAttachments()[
-			DeferredRenderSystem::gBufferNormals].imageView, 1, inFlightCount) },
-		{ "depthBuffer", DescriptorSet::Uniform(gFramebuffer->getDepthStencilAttachment().imageView, 1, inFlightCount) },
+		{ "gNormals", DescriptorSet::Uniform(gNormalsView, 1, inFlightCount) },
+		{ "depthBuffer", DescriptorSet::Uniform(depthBufferView, 1, inFlightCount) },
 		{ "shadowData", DescriptorSet::Uniform(dataBuffers) },
 		{ "depthMap", DescriptorSet::Uniform(depthMapView, 1, inFlightCount) },
 		{ "transparentMap", DescriptorSet::Uniform(transparentMapView, 1, inFlightCount) }
@@ -270,11 +272,8 @@ void CsmRenderSystem::gBufferRecreate()
 {
 	if (descriptorSet)
 	{
-		auto graphicsSystem = GraphicsSystem::Instance::get();
-		graphicsSystem->destroy(descriptorSet);
-		auto uniforms = getUniforms(depthMap, transparentMap, dataBuffers);
-		descriptorSet = graphicsSystem->createDescriptorSet(pipeline, std::move(uniforms));
-		SET_RESOURCE_DEBUG_NAME(descriptorSet, "descriptorSet.csm");
+		GraphicsSystem::Instance::get()->destroy(descriptorSet);
+		descriptorSet = {};
 	}
 }
 

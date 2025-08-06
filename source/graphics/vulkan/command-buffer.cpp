@@ -44,7 +44,7 @@ VulkanCommandBuffer::VulkanCommandBuffer(VulkanAPI* vulkanAPI, CommandBufferType
 	default: abort();
 	}
 
-	#if GARDEN_DEBUG // No GARDEN_EDITOR
+	#if GARDEN_DEBUG // Note: No GARDEN_EDITOR
 	if (vulkanAPI->hasDebugUtils)
 	{
 		const char* name = nullptr;
@@ -690,8 +690,7 @@ void VulkanCommandBuffer::processCommand(const BeginRenderPassCommand& command)
 		}
 	}
 	
-	vk::RenderingAttachmentInfoKHR depthAttachmentInfo;
-	vk::RenderingAttachmentInfoKHR stencilAttachmentInfo;
+	vk::RenderingAttachmentInfoKHR depthStencilAttachmentInfo;
 	vk::RenderingAttachmentInfoKHR* depthAttachmentInfoPtr = nullptr;
 	vk::RenderingAttachmentInfoKHR* stencilAttachmentInfoPtr = nullptr;
 
@@ -700,7 +699,6 @@ void VulkanCommandBuffer::processCommand(const BeginRenderPassCommand& command)
 		auto depthStencilAttachment = framebuffer->getDepthStencilAttachment();
 		
 		Image::BarrierState newImageState;
-		newImageState.layout = (uint32)vk::ImageLayout::eDepthStencilAttachmentOptimal;
 		if (depthStencilAttachment.flags.load)
 			newImageState.access |= (uint32)vk::AccessFlagBits::eDepthStencilAttachmentRead;
 		if (depthStencilAttachment.flags.clear || depthStencilAttachment.flags.load)
@@ -713,75 +711,65 @@ void VulkanCommandBuffer::processCommand(const BeginRenderPassCommand& command)
 
 		auto imageView = vulkanAPI->imageViewPool.get(depthStencilAttachment.imageView);
 		auto imageFormat = imageView->getFormat();
-		vk::ImageAspectFlags aspectFlags = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
+		vk::ImageAspectFlags aspectFlags;
+
+		if (noSubpass)
+		{
+			if (depthStencilAttachment.flags.clear) // TODO: support separated depth/stencil clear?
+			{
+				depthStencilAttachmentInfo.loadOp = vk::AttachmentLoadOp::eClear;
+				depthStencilAttachmentInfo.clearValue = vk::ClearValue(vk::ClearDepthStencilValue(
+					command.clearDepth, command.clearStencil));
+			}
+			else if (depthStencilAttachment.flags.load)
+			{
+				depthStencilAttachmentInfo.loadOp = vk::AttachmentLoadOp::eLoad;
+			}
+			else
+			{
+				depthStencilAttachmentInfo.loadOp = vk::AttachmentLoadOp::eDontCare;
+			}
+
+			depthStencilAttachmentInfo.imageView = (VkImageView)ResourceExt::getInstance(**imageView);
+			depthStencilAttachmentInfo.storeOp = depthStencilAttachment.flags.store ? 
+				vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eNone;
+		}
+		else
+		{
+			vulkanAPI->clearValues.emplace_back(vk::ClearDepthStencilValue(
+				command.clearDepth, command.clearStencil));
+		}
 
 		if (isFormatDepthOnly(imageFormat))
 		{
-			newImageState.layout = (uint32)vk::ImageLayout::eDepthAttachmentOptimal;
-			aspectFlags = vk::ImageAspectFlagBits::eDepth;
-
 			if (noSubpass)
 			{
-				if (depthStencilAttachment.flags.clear) // TODO: support separated depth/stencil clear?
-				{
-					depthAttachmentInfo.loadOp = vk::AttachmentLoadOp::eClear;
-					depthAttachmentInfo.clearValue = vk::ClearValue(vk::ClearDepthStencilValue(
-						command.clearDepth, command.clearStencil));
-				}
-				else if (depthStencilAttachment.flags.load)
-				{
-					depthAttachmentInfo.loadOp = vk::AttachmentLoadOp::eLoad;
-				}
-				else
-				{
-					depthAttachmentInfo.loadOp = vk::AttachmentLoadOp::eDontCare;
-				}
-
-				depthAttachmentInfo.imageView = (VkImageView)ResourceExt::getInstance(**imageView);
-				depthAttachmentInfo.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
-				depthAttachmentInfo.storeOp = depthStencilAttachment.flags.store ? 
-					vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eNone;
-				depthAttachmentInfoPtr = &depthAttachmentInfo;
+				depthStencilAttachmentInfo.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal;
+				depthAttachmentInfoPtr = &depthStencilAttachmentInfo;
 			}
-			else
-			{
-				vulkanAPI->clearValues.emplace_back(vk::ClearDepthStencilValue(
-					command.clearDepth, command.clearStencil));
-			}
+			newImageState.layout = (uint32)vk::ImageLayout::eDepthAttachmentOptimal;
+			aspectFlags = vk::ImageAspectFlagBits::eDepth;
 		}
 		else if (isFormatStencilOnly(imageFormat))
 		{
-			newImageState.layout = (uint32)vk::ImageLayout::eStencilAttachmentOptimal;
-			aspectFlags = vk::ImageAspectFlagBits::eStencil;
-
 			if (noSubpass)
 			{
-				if (depthStencilAttachment.flags.clear)
-				{
-					stencilAttachmentInfo.loadOp = vk::AttachmentLoadOp::eClear;
-					stencilAttachmentInfo.clearValue = vk::ClearValue(vk::ClearDepthStencilValue(
-						command.clearDepth, command.clearStencil));
-				}
-				else if (depthStencilAttachment.flags.load)
-				{
-					stencilAttachmentInfo.loadOp = vk::AttachmentLoadOp::eLoad;
-				}
-				else
-				{
-					stencilAttachmentInfo.loadOp = vk::AttachmentLoadOp::eDontCare;
-				}
-
-				stencilAttachmentInfo.imageView = (VkImageView)ResourceExt::getInstance(**imageView);
-				stencilAttachmentInfo.imageLayout = vk::ImageLayout::eStencilAttachmentOptimal;
-				stencilAttachmentInfo.storeOp = depthStencilAttachment.flags.store ? 
-					vk::AttachmentStoreOp::eStore : vk::AttachmentStoreOp::eNone;
-				stencilAttachmentInfoPtr = &stencilAttachmentInfo;
+				depthStencilAttachmentInfo.imageLayout = vk::ImageLayout::eStencilAttachmentOptimal;
+				stencilAttachmentInfoPtr = &depthStencilAttachmentInfo;
 			}
-			else
+			newImageState.layout = (uint32)vk::ImageLayout::eStencilAttachmentOptimal;
+			aspectFlags = vk::ImageAspectFlagBits::eStencil;
+		}
+		else
+		{
+			if (noSubpass)
 			{
-				vulkanAPI->clearValues.emplace_back(vk::ClearDepthStencilValue(
-					command.clearDepth, command.clearStencil));
+				depthStencilAttachmentInfo.imageLayout = vk::ImageLayout::eDepthStencilAttachmentOptimal;
+				depthAttachmentInfoPtr = &depthStencilAttachmentInfo;
+				stencilAttachmentInfoPtr = &depthStencilAttachmentInfo;
 			}
+			newImageState.layout = (uint32)vk::ImageLayout::eDepthStencilAttachmentOptimal;
+			aspectFlags = vk::ImageAspectFlagBits::eDepth | vk::ImageAspectFlagBits::eStencil;
 		}
 
 		addImageBarrier(vulkanAPI, newImageState, depthStencilAttachment.imageView, aspectFlags);
@@ -1357,7 +1345,7 @@ void VulkanCommandBuffer::processCommand(const CopyImageCommand& command)
 		{
 			auto mipImageSize = calcSizeAtMip3(srcImage->getSize(), region.srcMipLevel);
 			extent = vk::Extent3D(mipImageSize.getX(), mipImageSize.getY(), 
-				srcImage->getType() == Image::Type::Texture3D ? srcImage->getSize().getZ() : 1);
+				srcImage->getType() == Image::Type::Texture3D ? mipImageSize.getZ() : 1);
 		}
 		else
 		{
@@ -1418,7 +1406,7 @@ void VulkanCommandBuffer::processCommand(const CopyBufferImageCommand& command)
 		{
 			auto mipImageSize = calcSizeAtMip3(image->getSize(), region.imageMipLevel);
 			dstExtent = vk::Extent3D(mipImageSize.getX(), mipImageSize.getY(), 
-				image->getType() == Image::Type::Texture3D ? image->getSize().getZ() : 1);
+				image->getType() == Image::Type::Texture3D ? mipImageSize.getZ() : 1);
 		}
 		else
 		{
@@ -1490,7 +1478,7 @@ void VulkanCommandBuffer::processCommand(const BlitImageCommand& command)
 		{
 			auto mipImageSize = calcSizeAtMip3(srcImage->getSize(), region.srcMipLevel);
 			srcBounds[1] = vk::Offset3D(mipImageSize.getX(), mipImageSize.getY(), 
-				srcImage->getType() == Image::Type::Texture3D ? srcImage->getSize().getZ() : 1);
+				srcImage->getType() == Image::Type::Texture3D ? mipImageSize.getZ() : 1);
 		}
 		else
 		{
@@ -1500,7 +1488,7 @@ void VulkanCommandBuffer::processCommand(const BlitImageCommand& command)
 		{
 			auto mipImageSize = calcSizeAtMip3(dstImage->getSize(), region.dstMipLevel);
 			dstBounds[1] = vk::Offset3D(mipImageSize.getX(), mipImageSize.getY(), 
-				dstImage->getType() == Image::Type::Texture3D ? dstImage->getSize().getZ() : 1);
+				dstImage->getType() == Image::Type::Texture3D ? mipImageSize.getZ() : 1);
 		}
 		else
 		{

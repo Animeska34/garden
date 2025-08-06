@@ -47,7 +47,7 @@ namespace garden::graphics
 	};
 }
 
-#if 0 // Used to precompute Ki coeffs.
+#if 0 // Note: Used to precompute Ki coeffs.
 //**********************************************************************************************************************
 static uint32 factorial(uint32 x) noexcept
 {
@@ -60,7 +60,7 @@ static double factorial(int32 n, int32 d) noexcept
 	auto r = 1.0;
 	if (n == d)
 	{
-		// Intentionally left blank
+		// Note: Intentionally left blank
 	}
 	else if (n > d)
 	{
@@ -263,28 +263,34 @@ static void destroyAccumFramebuffers(ID<Framebuffer>* framebuffers)
 
 //**********************************************************************************************************************
 static ID<Image> createReflBuffer(vector<ID<ImageView>>& reflImageViews, 
-	ID<ImageView>& reflBufferView, vector<ID<DescriptorSet>>& reflBlurDSes)
+	ID<ImageView>& reflBufferView, vector<ID<DescriptorSet>>& reflBlurDSes, bool useBlur)
 {
 	auto graphicsSystem = GraphicsSystem::Instance::get();
 	auto reflBufferSize = graphicsSystem->getScaledFramebufferSize();
-	auto roughnessLodCount = calcMipCount(reflBufferSize); // We don't go lower than 16 texel in one dimension.
-	roughnessLodCount = (uint8)std::max(std::min(4, (int)roughnessLodCount), (int)roughnessLodCount - 4);
-	reflImageViews.resize(roughnessLodCount * 2);
-	reflBlurDSes.resize(roughnessLodCount);
 
-	Image::Mips mips(roughnessLodCount);
-	for (uint8 i = 0; i < roughnessLodCount; i++)
-		mips[i].resize(2);
+	uint8 lodCount = 1, layerCount = 1;
+	if (useBlur)
+	{
+		lodCount = calcMipCount(reflBufferSize); // Note: We don't go lower than 16 texel in one dimension.
+		lodCount = (uint8)std::max(std::min(4, (int)lodCount), (int)lodCount - 4);
+		reflBlurDSes.resize(lodCount);
+		layerCount = 2;
+	}
+	reflImageViews.resize(lodCount * layerCount);
+
+	Image::Mips mips(lodCount);
+	for (uint8 i = 0; i < lodCount; i++)
+		mips[i].resize(layerCount);
 
 	auto image = graphicsSystem->createImage(PbrLightingSystem::reflBufferFormat, Image::Usage::ColorAttachment | 
 		Image::Usage::Sampled | Image::Usage::Storage | Image::Usage::TransferDst | Image::Usage::TransferSrc | 
 		Image::Usage::Fullscreen, mips, reflBufferSize, Image::Strategy::Size);
 	SET_RESOURCE_DEBUG_NAME(image, "image.lighting.reflBuffer");
 
-	for (uint8 mip = 0; mip < roughnessLodCount; mip++)
+	for (uint8 mip = 0; mip < lodCount; mip++)
 	{
-		auto mipOffset = mip * 2;
-		for (uint8 layer = 0; layer < 2; layer++)
+		auto mipOffset = mip * layerCount;
+		for (uint8 layer = 0; layer < layerCount; layer++)
 		{
 			auto imageView = graphicsSystem->createImageView(image, Image::Type::Texture2D, 
 				PbrLightingSystem::reflBufferFormat, mip, 1, layer, 1);
@@ -293,9 +299,12 @@ static ID<Image> createReflBuffer(vector<ID<ImageView>>& reflImageViews,
 		}
 	}
 
-	reflBufferView = graphicsSystem->createImageView(image, 
-		Image::Type::Texture2D, PbrLightingSystem::reflBufferFormat, 0, 0, 0, 1);
-	SET_RESOURCE_DEBUG_NAME(reflBufferView, "imageView.lighting.reflBuffer");
+	if (useBlur)
+	{
+		reflBufferView = graphicsSystem->createImageView(image, 
+			Image::Type::Texture2D, PbrLightingSystem::reflBufferFormat, 0, 0, 0, 1);
+		SET_RESOURCE_DEBUG_NAME(reflBufferView, "imageView.lighting.reflBuffer");
+	}
 	return image;
 }
 static void createReflFramebuffers(const vector<ID<ImageView>>& reflImageViews, 
@@ -347,7 +356,10 @@ static DescriptorSet::Uniforms getLightingUniforms(ID<Image> dfgLUT, const ID<Im
 	const ID<ImageView>* aoImageViews, ID<ImageView> reflBufferView, ID<Image> giBuffer)
 {
 	auto graphicsSystem = GraphicsSystem::Instance::get();
-	auto gFramebufferView = graphicsSystem->get(DeferredRenderSystem::Instance::get()->getGFramebuffer());
+	auto deferredSystem = DeferredRenderSystem::Instance::get();
+	auto gFramebufferView = graphicsSystem->get(deferredSystem->getGFramebuffer());
+	auto depthBufferView = deferredSystem->getDepthImageView();
+	auto dfgLutView = graphicsSystem->get(dfgLUT)->getDefaultView();
 	const auto& gColorAttachments = gFramebufferView->getColorAttachments();
 	
 	graphicsSystem->startRecording(CommandBufferType::Frame);
@@ -357,7 +369,7 @@ static DescriptorSet::Uniforms getLightingUniforms(ID<Image> dfgLUT, const ID<Im
 
 	DescriptorSet::Uniforms uniforms =
 	{ 
-		{ "depthBuffer", DescriptorSet::Uniform(gFramebufferView->getDepthStencilAttachment().imageView) },
+		{ "depthBuffer", DescriptorSet::Uniform(depthBufferView) },
 		{ "shadowBuffer", DescriptorSet::Uniform(shadowImageViews[0] ?
 			shadowImageViews[0] : graphicsSystem->getWhiteTexture()) },
 		{ "aoBuffer", DescriptorSet::Uniform(aoImageViews[0] ?
@@ -366,7 +378,7 @@ static DescriptorSet::Uniforms getLightingUniforms(ID<Image> dfgLUT, const ID<Im
 			reflBufferView : graphicsSystem->getEmptyTexture()) },
 		{ "giBuffer", DescriptorSet::Uniform(giBuffer ?
 			graphicsSystem->get(giBuffer)->getDefaultView() : graphicsSystem->getEmptyTexture()) },
-		{ "dfgLUT", DescriptorSet::Uniform(graphicsSystem->get(dfgLUT)->getDefaultView()) }
+		{ "dfgLUT", DescriptorSet::Uniform(dfgLutView) }
 	};
 
 	for (uint8 i = 0; i < DeferredRenderSystem::gBufferCount; i++)
@@ -378,26 +390,26 @@ static DescriptorSet::Uniforms getLightingUniforms(ID<Image> dfgLUT, const ID<Im
 	return uniforms;
 }
 
-static ID<GraphicsPipeline> createLightingPipeline(bool useShadowBuffer, 
-	bool useAoBuffer, bool useReflBuffer, bool useGiBuffer)
+static ID<GraphicsPipeline> createLightingPipeline(PbrLightingSystem::Options pbrOptions)
 {
 	auto deferredSystem = DeferredRenderSystem::Instance::get();
 	Pipeline::SpecConstValues specConstValues =
 	{
-		{ "USE_SHADOW_BUFFER", Pipeline::SpecConstValue(useShadowBuffer) },
-		{ "USE_AO_BUFFER", Pipeline::SpecConstValue(useAoBuffer) },
-		{ "USE_REFLECTION_BUFFER", Pipeline::SpecConstValue(useReflBuffer) },
-		{ "USE_GI_BUFFER", Pipeline::SpecConstValue(useGiBuffer) },
+		{ "USE_SHADOW_BUFFER", Pipeline::SpecConstValue(pbrOptions.useShadowBuffer) },
+		{ "USE_AO_BUFFER", Pipeline::SpecConstValue(pbrOptions.useAoBuffer) },
+		{ "USE_REFLECTION_BUFFER", Pipeline::SpecConstValue(pbrOptions.useReflBuffer) },
+		{ "USE_REFLECTION_BLUR", Pipeline::SpecConstValue(pbrOptions.useReflBlur) },
+		{ "USE_GI_BUFFER", Pipeline::SpecConstValue(pbrOptions.useGiBuffer) },
 		{ "USE_CLEAR_COAT_BUFFER", Pipeline::SpecConstValue(deferredSystem->useClearCoat()) },
 		{ "USE_EMISSION_BUFFER", Pipeline::SpecConstValue(deferredSystem->useEmission()) }
 	};
 
-	ResourceSystem::GraphicsOptions options;
-	options.specConstValues = &specConstValues;
-	options.useAsyncRecording = deferredSystem->useAsyncRecording();
+	ResourceSystem::GraphicsOptions pipelineOptions;
+	pipelineOptions.specConstValues = &specConstValues;
+	pipelineOptions.useAsyncRecording = deferredSystem->useAsyncRecording();
 
 	return ResourceSystem::Instance::get()->loadGraphicsPipeline(
-		"pbr-lighting", deferredSystem->getHdrFramebuffer(), options);
+		"pbr-lighting", deferredSystem->getHdrFramebuffer(), pipelineOptions);
 }
 static ID<ComputePipeline> createIblSpecularPipeline()
 {
@@ -464,10 +476,7 @@ static ID<Buffer> createReflKernel()
 }
 
 //**********************************************************************************************************************
-PbrLightingSystem::PbrLightingSystem(bool useShadowBuffer, bool useAoBuffer, 
-	bool useReflBuffer, bool useGiBuffer, bool setSingleton) : Singleton(setSingleton), 
-	hasShadowBuffer(useShadowBuffer), hasAoBuffer(useAoBuffer),
-	hasReflBuffer(useReflBuffer), hasGiBuffer(useGiBuffer)
+PbrLightingSystem::PbrLightingSystem(Options options, bool setSingleton) : Singleton(setSingleton), options(options)
 {
 	auto manager = Manager::Instance::get();
 	manager->registerEvent("PreShadowRender");
@@ -543,7 +552,7 @@ void PbrLightingSystem::init()
 	if (!aoFramebuffers[0])
 		createAccumFramebuffers(aoImageViews, aoFramebuffers, "ao");
 	if (!reflBuffer)
-		reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes);
+		reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes, options.useReflBlur);
 	if (reflFramebuffers.empty())
 		createReflFramebuffers(reflImageViews, reflFramebuffers);
 	if (!giBuffer)
@@ -551,9 +560,9 @@ void PbrLightingSystem::init()
 	if (!giFramebuffer)
 		giFramebuffer = createGiFramebuffer(giBuffer);
 	if (!reflKernel)
-		reflKernel = createReflKernel();
+		reflKernel = createReflKernel(); // TODO: share this kernel with generic camera gaussian blur!
 	if (!lightingPipeline)
-		lightingPipeline = createLightingPipeline(hasShadowBuffer, hasAoBuffer, hasReflBuffer, hasGiBuffer);
+		lightingPipeline = createLightingPipeline(options);
 }
 void PbrLightingSystem::deinit()
 {
@@ -593,7 +602,7 @@ static float calcReflLodOffset(uint2 framebufferSize)
 {
 	auto graphicsSystem = GraphicsSystem::Instance::get();
 	auto cameraView = CameraSystem::Instance::get()->getComponent(graphicsSystem->camera);
-	constexpr float d = 1.0f; // Texel size of the reflection buffer in world units at 1 meter.
+	constexpr float d = 1.0f; // Note: Texel size of the reflection buffer in world units at 1 meter.
 	auto texelSizeAtOneMeter = (d * std::tan(cameraView->p.perspective.fieldOfView * 0.5f)) / framebufferSize.y;
 	return -std::log2((M_SQRT2 * reflectionsSigma0) * texelSizeAtOneMeter);
 }
@@ -650,7 +659,7 @@ void PbrLightingSystem::preHdrRender()
 	reflLodOffset = calcReflLodOffset(framebufferView->getSize());
 
 	auto manager = Manager::Instance::get();
-	if (hasShadowBuffer)
+	if (options.useShadowBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Pre Shadows Render");
 
@@ -658,7 +667,7 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 			event->run();
 	}
-	if (hasAoBuffer)
+	if (options.useAoBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Pre AO Render");
 
@@ -666,7 +675,7 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 			event->run();
 	}
-	if (hasReflBuffer)
+	if (options.useReflBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Pre Reflections Render");
 
@@ -674,7 +683,7 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 			event->run();
 	}
-	if (hasGiBuffer)
+	if (options.useGiBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Pre GI Render");
 
@@ -683,7 +692,8 @@ void PbrLightingSystem::preHdrRender()
 			event->run();
 	}
 
-	if (hasShadowBuffer)
+	graphicsSystem->startRecording(CommandBufferType::Frame);
+	if (options.useShadowBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Shadows Render Pass");
 
@@ -691,17 +701,27 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 		{
 			framebufferView = graphicsSystem->get(shadowFramebuffers[2]);
-			graphicsSystem->startRecording(CommandBufferType::Frame);
 			{
 				SET_GPU_DEBUG_LABEL("Shadows Pass", Color::transparent);
 				framebufferView->beginRenderPass(float4::one);
 				event->run();
 				framebufferView->endRenderPass();
 			}
-			graphicsSystem->stopRecording();
+		}
+
+		if (hasAnyShadow)
+		{
+			GpuProcessSystem::Instance::get()->bilateralBlurD(shadowImageViews[2], shadowFramebuffers[0], 
+				shadowFramebuffers[1], blurSharpness, shadowBlurPipeline, shadowBlurDS, 4);
+			hasAnyShadow = false;
+		}
+		else
+		{
+			auto imageView = graphicsSystem->get(shadowBuffer);
+			imageView->clear(float4::one);
 		}
 	}
-	if (hasAoBuffer)
+	if (options.useAoBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("AO Render Pass");
 
@@ -709,17 +729,29 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 		{
 			framebufferView = graphicsSystem->get(aoFramebuffers[2]);
-			graphicsSystem->startRecording(CommandBufferType::Frame);
 			{
 				SET_GPU_DEBUG_LABEL("AO Pass", Color::transparent);
 				framebufferView->beginRenderPass(float4::one);
 				event->run();
 				framebufferView->endRenderPass();
 			}
-			graphicsSystem->stopRecording();
+		}
+
+		if (hasAnyAO)
+		{
+			GpuProcessSystem::Instance::get()->bilateralBlurD(aoImageViews[2], aoFramebuffers[0], 
+				aoFramebuffers[1], blurSharpness, aoBlurPipeline, aoBlurDS);
+			hasAnyAO = false;
+		}
+		else
+		{
+			auto imageView = graphicsSystem->get(aoBuffer);
+			imageView->clear(float4::one);
+			imageView = graphicsSystem->get(aoBlurBuffer);
+			imageView->clear(float4::one);
 		}
 	}
-	if (hasReflBuffer)
+	if (options.useReflBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Reflections Render Pass");
 
@@ -727,17 +759,30 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 		{
 			framebufferView = graphicsSystem->get(reflFramebuffers[0]);
-			graphicsSystem->startRecording(CommandBufferType::Frame);
 			{
 				SET_GPU_DEBUG_LABEL("Reflection Pass", Color::transparent);
 				framebufferView->beginRenderPass(float4::zero);
 				event->run();
 				framebufferView->endRenderPass();
 			}
-			graphicsSystem->stopRecording();
+		}
+
+		if (hasAnyRefl)
+		{
+			if (options.useReflBlur)
+			{
+				downsampleReflections(reflImageViews, reflFramebuffers, 
+					reflKernel, reflBlurPipeline, reflBlurDSes);
+			}
+			hasAnyRefl = false;
+		}
+		else
+		{
+			auto imageView = graphicsSystem->get(reflBuffer);
+			imageView->clear(float4::zero);
 		}
 	}
-	if (hasGiBuffer)
+	if (options.useGiBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("GI Render Pass");
 
@@ -745,18 +790,25 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 		{
 			framebufferView = graphicsSystem->get(giFramebuffer);
-			graphicsSystem->startRecording(CommandBufferType::Frame);
 			{
 				SET_GPU_DEBUG_LABEL("GI Pass", Color::transparent);
 				framebufferView->beginRenderPass(float4::zero);
 				event->run();
 				framebufferView->endRenderPass();
 			}
-			graphicsSystem->stopRecording();
+		}
+
+		if (!hasAnyGI)
+		{
+			auto& cameraConstants = graphicsSystem->getCameraConstants();
+			auto skyColor = (float3)cameraConstants.skyColor;
+			auto imageView = graphicsSystem->get(giBuffer);
+			imageView->clear(float4(skyColor, 1.0f));
 		}
 	}
+	graphicsSystem->stopRecording();
 
-	if (hasReflBuffer)
+	if (options.useReflBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Post Reflections Render");
 
@@ -764,7 +816,7 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 			event->run();
 	}
-	if (hasShadowBuffer)
+	if (options.useShadowBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Post Shadows Render");
 
@@ -772,7 +824,7 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 			event->run();
 	}
-	if (hasAoBuffer)
+	if (options.useAoBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Post AO Render");
 
@@ -780,7 +832,7 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 			event->run();
 	}
-	if (hasGiBuffer)
+	if (options.useGiBuffer)
 	{
 		SET_CPU_ZONE_SCOPED("Post GI Render");
 
@@ -788,55 +840,6 @@ void PbrLightingSystem::preHdrRender()
 		if (event->hasSubscribers())
 			event->run();
 	}
-
-	graphicsSystem->startRecording(CommandBufferType::Frame);
-
-	if (hasAnyShadow)
-	{
-		GpuProcessSystem::Instance::get()->bilateralBlurD(shadowImageViews[2], shadowFramebuffers[0], 
-			shadowFramebuffers[1], blurSharpness, shadowBlurPipeline, shadowBlurDS, 4);
-		hasAnyShadow = false;
-	}
-	else if (shadowBuffer)
-	{
-		auto imageView = graphicsSystem->get(shadowBuffer);
-		imageView->clear(float4::one);
-	}
-
-	if (hasAnyAO)
-	{
-		GpuProcessSystem::Instance::get()->bilateralBlurD(aoImageViews[2], aoFramebuffers[0], 
-			aoFramebuffers[1], blurSharpness, aoBlurPipeline, aoBlurDS);
-		hasAnyAO = false;
-	}
-	else if (aoBuffer)
-	{
-		auto imageView = graphicsSystem->get(aoBuffer);
-		imageView->clear(float4::one);
-		imageView = graphicsSystem->get(aoBlurBuffer);
-		imageView->clear(float4::one);
-	}
-
-	if (hasAnyRefl)
-	{
-		downsampleReflections(reflImageViews, reflFramebuffers, 
-			reflKernel, reflBlurPipeline, reflBlurDSes);
-		hasAnyRefl = false;
-	}
-	else if (reflBuffer)
-	{
-		auto imageView = graphicsSystem->get(reflBuffer);
-		imageView->clear(float4::zero);
-	}
-
-	if (!hasAnyGI && giBuffer)
-	{
-		auto imageView = graphicsSystem->get(giBuffer);
-		auto& cameraConstants = graphicsSystem->getCameraConstants();
-		imageView->clear((float4)cameraConstants.skyColor);
-	}
-
-	graphicsSystem->stopRecording();
 }
 
 //**********************************************************************************************************************
@@ -932,7 +935,7 @@ void PbrLightingSystem::gBufferRecreate()
 		graphicsSystem->destroy(reflBufferView);
 		graphicsSystem->destroy(reflImageViews);
 		graphicsSystem->destroy(reflBuffer);
-		reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes);
+		reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes, options.useReflBlur);
 	}
 	if (!reflFramebuffers.empty())
 	{
@@ -993,16 +996,17 @@ void PbrLightingSystem::gBufferRecreate()
 	}
 	if (giFramebuffer)
 	{
-		graphicsSystem->destroy(giFramebuffer);
-		giFramebuffer = createGiFramebuffer(giBuffer);
+		auto giBufferView = graphicsSystem->get(giBuffer)->getDefaultView();
+		auto framebufferSize = graphicsSystem->getScaledFramebufferSize();
+		auto colorAttachment = Framebuffer::OutputAttachment(
+			giBufferView, PbrLightingSystem::accumBufferFlags);
+		auto framebufferView = graphicsSystem->get(giFramebuffer);
+		framebufferView->update(framebufferSize, &colorAttachment, 1);
 	}
-
 	if (lightingDS)
 	{
 		graphicsSystem->destroy(lightingDS);
-		auto uniforms = getLightingUniforms(dfgLUT, shadowImageViews, aoImageViews, reflBufferView, giBuffer);
-		lightingDS = graphicsSystem->createDescriptorSet(lightingPipeline, std::move(uniforms));
-		SET_RESOURCE_DEBUG_NAME(lightingDS, "descriptorSet.lighting.base");
+		lightingDS = {};
 	}
 
 	if (aoBuffer || aoFramebuffers[0])
@@ -1044,18 +1048,10 @@ string_view PbrLightingSystem::getComponentName() const
 }
 
 //**********************************************************************************************************************
-void PbrLightingSystem::setConsts(bool useShadowBuffer, bool useAoBuffer, bool useReflBuffer, bool useGiBuffer)
+void PbrLightingSystem::setOptions(Options options)
 {
-	if (this->hasShadowBuffer == useShadowBuffer && this->hasAoBuffer == useAoBuffer && 
-		this->hasReflBuffer == useReflBuffer && this->hasGiBuffer == useGiBuffer)
-	{
+	if (memcmp(&this->options, &options, sizeof(Options)) == 0)
 		return;
-	}
-
-	this->hasShadowBuffer = useShadowBuffer;
-	this->hasAoBuffer = useAoBuffer;
-	this->hasReflBuffer = useReflBuffer;
-	this->hasGiBuffer = useGiBuffer;
 
 	auto graphicsSystem = GraphicsSystem::Instance::get();
 	graphicsSystem->destroy(lightingDS);
@@ -1069,9 +1065,9 @@ void PbrLightingSystem::setConsts(bool useShadowBuffer, bool useAoBuffer, bool u
 		pbrLighting.descriptorSet = {};
 	}
 
-	if (this->hasShadowBuffer != useShadowBuffer)
+	if (this->options.useShadowBuffer != options.useShadowBuffer)
 	{
-		if (useShadowBuffer)
+		if (options.useShadowBuffer)
 		{
 			shadowBuffer = createAccumBuffers(shadowBufferFormat, shadowImageViews, shadowBlurBuffer, "shadow");
 			createAccumFramebuffers(shadowImageViews, shadowFramebuffers, "shadow");
@@ -1083,9 +1079,9 @@ void PbrLightingSystem::setConsts(bool useShadowBuffer, bool useAoBuffer, bool u
 			shadowBuffer = {};
 		}
 	}
-	if (this->hasAoBuffer != useAoBuffer)
+	if (this->options.useAoBuffer != options.useAoBuffer)
 	{
-		if (useAoBuffer)
+		if (options.useAoBuffer)
 		{
 			aoBuffer = createAccumBuffers(aoBufferFormat, aoImageViews, aoBlurBuffer, "ao");
 			createAccumFramebuffers(aoImageViews, aoFramebuffers, "ao");
@@ -1097,11 +1093,11 @@ void PbrLightingSystem::setConsts(bool useShadowBuffer, bool useAoBuffer, bool u
 			aoBuffer = {};
 		}
 	}
-	if (this->hasReflBuffer != useReflBuffer)
+	if (this->options.useReflBuffer != options.useReflBuffer || this->options.useReflBlur != options.useReflBlur)
 	{
-		if (useReflBuffer)
+		if (options.useReflBuffer)
 		{
-			reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes);
+			reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes, options.useReflBlur);
 			createReflFramebuffers(reflImageViews, reflFramebuffers);
 		}
 		else
@@ -1114,9 +1110,9 @@ void PbrLightingSystem::setConsts(bool useShadowBuffer, bool useAoBuffer, bool u
 			reflFramebuffers = {}; reflBufferView = {};
 		}
 	}
-	if (this->hasGiBuffer != useGiBuffer)
+	if (this->options.useGiBuffer != options.useGiBuffer)
 	{
-		if (useGiBuffer)
+		if (options.useGiBuffer)
 		{
 			giBuffer = createGiBuffer();
 			giFramebuffer = createGiFramebuffer(giBuffer);
@@ -1132,15 +1128,17 @@ void PbrLightingSystem::setConsts(bool useShadowBuffer, bool useAoBuffer, bool u
 	if (lightingPipeline)
 	{
 		graphicsSystem->destroy(lightingPipeline);
-		lightingPipeline = createLightingPipeline(useShadowBuffer, useAoBuffer, useReflBuffer, useGiBuffer);
+		lightingPipeline = createLightingPipeline(options);
 	}
+
+	this->options = options;
 }
 
 //**********************************************************************************************************************
 ID<GraphicsPipeline> PbrLightingSystem::getLightingPipeline()
 {
 	if (!lightingPipeline)
-		lightingPipeline = createLightingPipeline(hasShadowBuffer, hasAoBuffer, hasReflBuffer, hasGiBuffer);
+		lightingPipeline = createLightingPipeline(options);
 	return lightingPipeline;
 }
 ID<ComputePipeline> PbrLightingSystem::getIblSpecularPipeline()
@@ -1152,25 +1150,25 @@ ID<ComputePipeline> PbrLightingSystem::getIblSpecularPipeline()
 
 const ID<Framebuffer>* PbrLightingSystem::getShadowFramebuffers()
 {
-	if (!shadowFramebuffers[0] && hasShadowBuffer)
+	if (!shadowFramebuffers[0] && options.useShadowBuffer)
 		createAccumFramebuffers(getShadowImageViews(), shadowFramebuffers, "shadow");
 	return shadowFramebuffers;
 }
 const ID<Framebuffer>* PbrLightingSystem::getAoFramebuffers()
 {
-	if (!aoFramebuffers[0] && hasAoBuffer)
+	if (!aoFramebuffers[0] && options.useAoBuffer)
 		createAccumFramebuffers(getAoImageViews(), aoFramebuffers, "ao");
 	return aoFramebuffers;
 }
 const vector<ID<Framebuffer>>& PbrLightingSystem::getReflFramebuffers()
 {
-	if (reflFramebuffers.empty() && hasReflBuffer)
+	if (reflFramebuffers.empty() && options.useReflBuffer)
 		createReflFramebuffers(getReflImageViews(), reflFramebuffers);
 	return reflFramebuffers;
 }
 ID<Framebuffer> PbrLightingSystem::getGiFramebuffer()
 {
-	if (!giFramebuffer && hasGiBuffer)
+	if (!giFramebuffer && options.useGiBuffer)
 		giFramebuffer = createGiFramebuffer(getGiBuffer());
 	return giFramebuffer;
 }
@@ -1191,57 +1189,57 @@ ID<Buffer> PbrLightingSystem::getReflKernel()
 
 ID<Image> PbrLightingSystem::getShadowBuffer()
 {
-	if (!shadowBuffer && hasShadowBuffer)
+	if (!shadowBuffer && options.useShadowBuffer)
 		shadowBuffer = createAccumBuffers(shadowBufferFormat, shadowImageViews, shadowBlurBuffer, "shadow");
 	return shadowBuffer;
 }
 ID<Image> PbrLightingSystem::getShadBlurBuffer()
 {
-	if (!shadowBuffer && hasShadowBuffer)
+	if (!shadowBuffer && options.useShadowBuffer)
 		shadowBuffer = createAccumBuffers(shadowBufferFormat, shadowImageViews, shadowBlurBuffer, "shadow");
 	return shadowBlurBuffer;
 }
 ID<Image> PbrLightingSystem::getAoBuffer()
 {
-	if (!aoBuffer && hasAoBuffer)
+	if (!aoBuffer && options.useAoBuffer)
 		aoBuffer = createAccumBuffers(aoBufferFormat, aoImageViews, aoBlurBuffer, "ao");
 	return aoBuffer;
 }
 ID<Image> PbrLightingSystem::getAoBlurBuffer()
 {
-	if (!aoBuffer && hasAoBuffer)
+	if (!aoBuffer && options.useAoBuffer)
 		aoBuffer = createAccumBuffers(aoBufferFormat, aoImageViews, aoBlurBuffer, "ao");
 	return aoBlurBuffer;
 }
 ID<Image> PbrLightingSystem::getReflBuffer()
 {
-	if (!reflBuffer && hasReflBuffer)
-		reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes);
+	if (!reflBuffer && options.useReflBuffer)
+		reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes, options.useReflBlur);
 	return reflBuffer;
 }
 ID<Image> PbrLightingSystem::getGiBuffer()
 {
-	if (!giBuffer && hasGiBuffer)
+	if (!giBuffer && options.useGiBuffer)
 		giBuffer = createGiBuffer();
 	return giBuffer;
 }
 
 const ID<ImageView>* PbrLightingSystem::getShadowImageViews()
 {
-	if (!shadowBuffer && hasShadowBuffer)
+	if (!shadowBuffer && options.useShadowBuffer)
 		shadowBuffer = createAccumBuffers(shadowBufferFormat, shadowImageViews, shadowBlurBuffer, "shadow");
 	return shadowImageViews;
 }
 const ID<ImageView>* PbrLightingSystem::getAoImageViews()
 {
-	if (!aoBuffer && hasAoBuffer)
+	if (!aoBuffer && options.useAoBuffer)
 		aoBuffer = createAccumBuffers(aoBufferFormat, aoImageViews, aoBlurBuffer, "ao");
 	return aoImageViews;
 }
 const vector<ID<ImageView>>& PbrLightingSystem::getReflImageViews()
 {
-	if (!reflBuffer && hasReflBuffer)
-		reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes);
+	if (!reflBuffer && options.useReflBuffer)
+		reflBuffer = createReflBuffer(reflImageViews, reflBufferView, reflBlurDSes, options.useReflBlur);
 	return reflImageViews;
 }
 
@@ -1565,12 +1563,12 @@ Ref<DescriptorSet> PbrLightingSystem::createDescriptorSet(ID<Entity> entity,
 	}
 
 	auto graphicsSystem = GraphicsSystem::Instance::get();
-	auto specularView = graphicsSystem->get(pbrLightingView->specular);
+	auto specularView = graphicsSystem->get(pbrLightingView->specular)->getDefaultView();
 
 	DescriptorSet::Uniforms iblUniforms =
 	{ 
 		{ "sh", DescriptorSet::Uniform(ID<Buffer>(pbrLightingView->sh)) },
-		{ "specular", DescriptorSet::Uniform(specularView->getDefaultView()) }
+		{ "specular", DescriptorSet::Uniform(specularView) }
 	};
 
 	ID<DescriptorSet> descriptorSet;

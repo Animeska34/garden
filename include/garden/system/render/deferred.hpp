@@ -21,10 +21,9 @@
  * G-Buffer structure:
  *   0. SrgbB8G8R8A8       (Base Color, Specular Factor)
  *   1. UnormB8G8R8A8      (Metallic, Roughness, Ambient Occlusion, Reflectance)
- *   2. UnormA2B10G10R10   (Clear Coat Normal, Clear Coat Roughness)
- *   3. UnormA2B10G10R10   (Encoded Normal, Shadow)
+ *   2. UnormA2B10G10R10   (Encoded Normal, Shadow)
+ *   3. UnormA2B10G10R10   (Clear Coat Normal and Roughness) [optional]
  *   4. SrgbB8G8R8A8       (Emissive Color and Factor) [optional]
- *   5. SfloatR16G16B16A16 (Global Illumination Color) [optional]
  */
 
 // TODO: Sheen rendering.
@@ -63,7 +62,7 @@ class DeferredRenderSystem final : public System, public Singleton<DeferredRende
 public:
 	static constexpr uint8 gBufferBaseColor = 0;   /**< Index of the G-Buffer with encoded base color. */
 	static constexpr uint8 gBufferSpecFactor = 0;  /**< Index of the G-Buffer with encoded specular factor. */
-	static constexpr uint8 gBuffermetallic = 1;    /**< Index of the G-Buffer with encoded metallic. */
+	static constexpr uint8 gBufferMetallic = 1;    /**< Index of the G-Buffer with encoded metallic. */
 	static constexpr uint8 gBufferRoughness = 1;   /**< Index of the G-Buffer with encoded roughness. */
 	static constexpr uint8 gBufferMaterialAO = 1;  /**< Index of the G-Buffer with encoded material ambient occlusion. */
 	static constexpr uint8 gBufferReflectance = 1; /**< Index of the G-Buffer with encoded reflectance. */
@@ -80,7 +79,9 @@ public:
 	static constexpr Image::Format gBufferFormat2 = Image::Format::UnormA2B10G10R10;
 	static constexpr Image::Format gBufferFormat3 = Image::Format::UnormA2B10G10R10;
 	static constexpr Image::Format gBufferFormat4 = Image::Format::SrgbB8G8R8A8;
-	static constexpr Image::Format depthStencilFormat = Image::Format::SfloatD32;
+	static constexpr Image::Format depthStencilFormat = Image::Format::SfloatD32UintS8;
+	static constexpr Image::Format depthFormat = Image::Format::SfloatD32;
+	static constexpr Image::Format stencilFormat = Image::Format::UintS8;
 	static constexpr Image::Format hdrBufferFormat = Image::Format::SfloatR16G16B16A16;
 	static constexpr Image::Format ldrBufferFormat = Image::Format::SrgbB8G8R8A8;
 	static constexpr Image::Format uiBufferFormat = Image::Format::SrgbB8G8R8A8;
@@ -111,6 +112,10 @@ private:
 	ID<Image> depthStencilBuffer = {};
 	ID<Image> depthCopyBuffer = {};
 	ID<Image> transBuffer = {};
+	ID<ImageView> depthStencilIV = {};
+	ID<ImageView> depthCopyIV = {};
+	ID<ImageView> depthImageView = {};
+	ID<ImageView> stencilImageView = {};
 	ID<Framebuffer> gFramebuffer = {};
 	ID<Framebuffer> hdrFramebuffer = {};
 	ID<Framebuffer> depthHdrFramebuffer = {};
@@ -121,6 +126,7 @@ private:
 	ID<Framebuffer> oitFramebuffer = {};
 	ID<Framebuffer> transDepthFramebuffer = {};
 	bool asyncRecording = false;
+	bool hasStencil = false;
 	bool hasClearCoat = false;
 	bool hasEmission = false;
 	bool hasAnyRefr = false;
@@ -130,13 +136,14 @@ private:
 	/**
 	 * @brief Creates a new deferred rendering system instance.
 	 * 
+	 * @param useStencil use stencil buffer
 	 * @param useClearCoat use clear coat buffer
 	 * @param useEmission use light emission buffer
 	 * @param useAsyncRecording use multithreaded render commands recording
 	 * @param setSingleton set system singleton instance
 	 */
-	DeferredRenderSystem(bool useClearCoat = true, bool useEmission = true, 
-		bool useAsyncRecording = true, bool setSingleton = true);
+	DeferredRenderSystem(bool useStencil = false, bool useClearCoat = true, 
+		bool useEmission = true, bool useAsyncRecording = true, bool setSingleton = true);
 	/**
 	 * @brief Destroys deferred rendering system instance.
 	 */
@@ -225,13 +232,30 @@ public:
 	 */
 	ID<Image> getDepthStencilBuffer();
 	/**
-	 * @brief Returns deferred depth copy buffer.
+	 * @brief Returns deferred depth/stencil copy buffer.
 	 */
 	ID<Image> getDepthCopyBuffer();
 	/**
 	 * @brief Returns deferred transparent buffer.
 	 */
 	ID<Image> getTransBuffer();
+
+	/**
+	 * @brief Returns deferred depth/stencil buffer image view.
+	 */
+	ID<ImageView> getDepthStencilIV();
+	/**
+	 * @brief Returns deferred depth/stencil copy buffer image view.
+	 */
+	ID<ImageView> getDepthCopyIV();
+	/**
+	 * @brief Returns deferred depth buffer image view.
+	 */
+	ID<ImageView> getDepthImageView();
+	/**
+	 * @brief Returns deferred stencil buffer image view.
+	 */
+	ID<ImageView> getStencilImageView();
 
 	/**
 	 * @brief Returns deferred G-Buffer framebuffer.
