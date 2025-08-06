@@ -35,7 +35,7 @@ namespace garden
 		Mesh*lod(int &level);
 		void addLod(std::filesystem::path &path);
 		void addLods(std::filesystem::path *path, int size);
-
+		void destroy();
 	private:
 		static Mesh loadMesh(std::filesystem::path &path);
 		static const aiScene *loadScene(std::filesystem::path &path);

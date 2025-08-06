@@ -147,3 +147,8 @@ void Model::addLods(std::filesystem::path *path, int size)
         this->lods.push_back(mesh);
     }
 }
+
+void Model::destroy()
+{
+    
+}
