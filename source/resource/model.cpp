@@ -89,7 +89,7 @@ Mesh Model::loadMesh(std::filesystem::path &path)
             // TODO Impl multiple UV Channel support
 
             // Writing UV0
-            auto uv = aiMesh->HasTextureCoords(0) ? aiMesh->mTextureCoords[0][v] : aiVector3d(0, 0, 0);
+            auto uv = aiMesh->HasTextureCoords(0) ? aiMesh->mTextureCoords[0][v] : aiVector3D(0, 0, 0);
             vertex.uv = float2(uv.x, uv.y);
 
             auto norm = aiMesh->HasNormals() ? aiMesh->mNormals[v] : aiVector3D(0, 0, 0);
