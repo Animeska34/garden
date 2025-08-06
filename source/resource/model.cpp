@@ -23,7 +23,7 @@ const aiScene *Model::loadScene(std::filesystem::path &path)
 
     if (!scene || scene->mFlags & AI_SCENE_FLAGS_INCOMPLETE || !scene->mRootNode)
     {
-        throw new std::exception(importer.GetErrorString());
+        throw std::runtime_error(importer.GetErrorString());
     }
     return scene;
 }
